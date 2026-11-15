@@ -14,7 +14,7 @@ jobs:
   check-version:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Tag matches Cargo.toml, metainfo and changelog
         run: |
           v=${GITHUB_REF_NAME#v}
@@ -29,7 +29,7 @@ jobs:
     # The oldest supported Ubuntu, so the AppImage runs on distributions with older glibc.
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: packaging/install-sdl-build-deps.sh
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -44,7 +44,7 @@ jobs:
     needs: check-version
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install flatpak-builder
         run: |
           sudo apt-get update
@@ -64,7 +64,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v4
         with:
           path: dist

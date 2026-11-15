@@ -15,7 +15,7 @@ jobs:
   check:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: packaging/install-sdl-build-deps.sh
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -28,7 +28,7 @@ jobs:
   msrv:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: packaging/install-sdl-build-deps.sh
       - name: Read rust-version from Cargo.toml
         id: msrv
@@ -42,7 +42,7 @@ jobs:
   metadata:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends desktop-file-utils appstream
       - run: desktop-file-validate packaging/*.desktop
       - run: appstreamcli validate --no-net packaging/*.metainfo.xml
