@@ -43,6 +43,8 @@ pub enum MenuCommand {
     /// Size in percent.
     Scale(u32),
     DefaultSkin,
+    /// One of the collected skins listed in the menu (index into `App::menu_skins`).
+    Skin(usize),
     OpenSkin,
     Quit,
     /// An EQ preset; None resets to flat.
@@ -78,6 +80,8 @@ pub struct App {
     pub menu: Option<Menu<MenuCommand>>,
     /// Size in percent of the classic skin size, one of `crate::SCALES`.
     pub scale: u32,
+    /// The collected skins listed in the open menu.
+    menu_skins: Vec<PathBuf>,
     pub vis: Visualizer,
     vis_samples: Vec<f32>,
     pub quit: bool,
@@ -118,6 +122,7 @@ impl App {
             art_loader: ArtLoader::new(),
             menu: None,
             scale: state.scale,
+            menu_skins: Vec::new(),
             vis: Visualizer::new(state.vis_mode),
             vis_samples: Vec::new(),
             quit: false,
@@ -322,6 +327,20 @@ impl App {
         let scales = (crate::SCALES.iter())
             .map(|n| Entry::item(format!("{n}%"), Scale(*n)).radio(self.scale == *n))
             .collect();
+        let collected = crate::skins::list();
+        let mut skins = vec![
+            Entry::item("Default skin", DefaultSkin).radio(self.skin_path.is_none()),
+            Entry::Separator,
+        ];
+        for (i, (name, path)) in collected.iter().enumerate() {
+            let current = self.skin_path.as_ref() == Some(path);
+            skins.push(Entry::item(name.as_str(), Skin(i)).radio(current));
+        }
+        if !collected.is_empty() {
+            skins.push(Entry::Separator);
+        }
+        skins.push(Entry::item("Open skin…", OpenSkin));
+        self.menu_skins = collected.into_iter().map(|(_, p)| p).collect();
         let entries = vec![
             Entry::item("Equalizer", ToggleEq)
                 .checked(self.main.eq)
@@ -342,13 +361,7 @@ impl App {
                 ],
             ),
             Entry::submenu("Scale", scales),
-            Entry::submenu(
-                "Skin",
-                vec![
-                    Entry::item("Default skin", DefaultSkin).radio(self.skin_path.is_none()),
-                    Entry::item("Open skin…", OpenSkin),
-                ],
-            ),
+            Entry::submenu("Skin", skins),
             Entry::Separator,
             Entry::item("Quit", Quit).shortcut("Ctrl+Q"),
         ];
@@ -367,6 +380,11 @@ impl App {
             MenuCommand::DefaultSkin => {
                 self.skin = Skin::base();
                 self.skin_path = None;
+            }
+            MenuCommand::Skin(i) => {
+                if let Some(path) = self.menu_skins.get(i).cloned() {
+                    self.load_skin(&path);
+                }
             }
             MenuCommand::OpenSkin => self.open_dialog(Dialog::Skin, window),
             MenuCommand::Quit => self.quit = true,
@@ -452,11 +470,13 @@ impl App {
         }
     }
 
+    /// Loads a skin and adds it to the collection.
     fn load_skin(&mut self, path: &Path) {
         match Skin::load(path) {
             Ok(s) => {
                 self.skin = s;
-                self.skin_path = std::fs::canonicalize(path).ok();
+                let kept = crate::skins::keep(path);
+                self.skin_path = std::fs::canonicalize(kept).ok();
             }
             Err(e) => eprintln!("libreamp: {e}"),
         }
@@ -506,6 +526,9 @@ impl App {
 
     /// Per-frame housekeeping: dialog results, tags, position, end of track.
     pub fn update(&mut self) {
+        if let Some(menu) = &mut self.menu {
+            menu.tick(std::time::Instant::now());
+        }
         // The album art panel uses the skin's own gen.bmp frame, or none.
         self.art_win.framed = self.skin.has_own("gen");
         while let Ok((kind, paths)) = self.dialog_rx.try_recv() {

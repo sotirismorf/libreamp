@@ -16,7 +16,11 @@ All notable changes to LibreAmp are listed here. The format follows
   square); remembered between runs.
 - Right-click menu: show or hide the equalizer, playlist and album art; choose the
   visualizer, scale and skin, including going back to the default skin or opening one with
-  a file dialog. Works with the mouse or the arrow keys.
+  a file dialog. Works with the mouse or the arrow keys. Submenus stay open while the
+  pointer heads into them, even across other items.
+- Skin collection: every skin loaded (dropped, opened or given on the command line) is copied
+  to `~/.local/share/libreamp/skins`, without duplicates, and listed in the Skin submenu.
+  Menus too long for the window scroll.
 - Shaped skins: the parts a skin's `region.txt` cuts out of the main window and equalizer
   are see-through (they were black) and ignore clicks.
 - Resumes where you left off: the track that was playing or paused at exit comes back paused

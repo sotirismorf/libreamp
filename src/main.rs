@@ -7,6 +7,7 @@ mod font;
 mod gfx;
 mod playlist;
 mod skin;
+mod skins;
 mod sprites;
 mod ui;
 mod vis;
@@ -291,7 +292,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let skin_path = args.skin.clone().or(state.skin.clone());
     let (skin, skin_path) = match &skin_path {
         Some(path) => match Skin::load(path) {
-            Ok(s) => (s, std::fs::canonicalize(path).ok()),
+            Ok(s) => {
+                // A skin given on the command line joins the collection, like an opened one.
+                let kept = match &args.skin {
+                    Some(_) => skins::keep(path),
+                    None => path.clone(),
+                };
+                (s, std::fs::canonicalize(kept).ok())
+            }
             // A saved skin that has since moved shouldn't stop the player from starting.
             Err(e) if args.skin.is_none() => {
                 eprintln!("libreamp: {e}");
@@ -604,6 +612,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 } => {
                     let (mx, my) = skin_pos(mouse_x, mouse_y);
                     let notches = if y > 0.0 { 1 } else { -1 };
+                    if let Some(menu) = &mut app.menu {
+                        menu.wheel(mx, my, notches);
+                        continue;
+                    }
                     match target_at(my) {
                         Some((Target::Playlist, _)) => app.pl.wheel(notches * 3, &app.playlist),
                         Some((Target::Art, _)) => {}

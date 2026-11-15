@@ -23,6 +23,8 @@ saved wherever you choose in the save dialog.
 
 - Classic skins: `.wsz`/`.zip` archives or unpacked skin folders. Anything a skin lacks comes
   from the bundled default skin. Shaped skins (`region.txt`) get see-through windows.
+- A skin collection: every skin you load is copied to `~/.local/share/libreamp/skins` and
+  listed in the right-click menu's Skin submenu.
 - Sizes of 100%, 150% and 200% (Winamp's "double size", the default), the same on any display
   (Ctrl + / Ctrl − to change). Whole screen pixels per skin pixel are drawn nearest-neighbour;
   in-between sizes (150% on a standard display) are drawn at the next whole size and shrunk
@@ -49,7 +51,10 @@ Drop audio files, folders or playlists on the window to play them; while the pla
 they are added to it instead. Drop a `.wsz` to change skin. Drag title bars to move the window.
 
 Right-click anywhere for the menu: show or hide the equalizer, playlist and album art, and pick
-the visualizer, scale and skin (including going back to the default skin).
+the visualizer, scale and skin (including going back to the default skin). Skins you have
+loaded before are listed there; to add or remove skins by hand, put `.wsz` files or skin
+folders in `~/.local/share/libreamp/skins`
+(`~/.var/app/io.github.sotirismorf.LibreAmp/data/libreamp/skins` for the Flatpak).
 
 | Key | Action |
 |---|---|
