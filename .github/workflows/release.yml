@@ -14,7 +14,7 @@ jobs:
   check-version:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Tag matches Cargo.toml, metainfo and changelog
         run: |
           v=${GITHUB_REF_NAME#v}
@@ -29,12 +29,12 @@ jobs:
     # The oldest supported Ubuntu, so the AppImage runs on distributions with older glibc.
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: packaging/install-sdl-build-deps.sh
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: packaging/appimage/build.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: appimage
           path: dist/*
@@ -44,7 +44,7 @@ jobs:
     needs: check-version
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install flatpak-builder
         run: |
           sudo apt-get update
@@ -52,7 +52,7 @@ jobs:
           # Ubuntu's AppArmor default blocks the unprivileged user namespaces bubblewrap needs.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: packaging/flatpak/build.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: flatpak
           path: dist/*
@@ -64,8 +64,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -76,7 +76,7 @@ jobs:
           v=${GITHUB_REF_NAME#v}
           awk -v v="$v" '/^## \[/ { if (on) exit; on = index($0, "[" v "]") > 0; next } on' \
             CHANGELOG.md > notes.md
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           name: LibreAmp ${{ github.ref_name }}
           body_path: notes.md
