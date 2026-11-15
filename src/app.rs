@@ -9,13 +9,15 @@ use sdl3::dialog::{
 };
 use sdl3::video::Window;
 
+use crate::art::{Art, ArtLoader};
 use crate::audio::Audio;
 use crate::config::{self, State};
 use crate::eq;
 use crate::playlist::Playlist;
 use crate::skin::Skin;
 use crate::ui::{
-    Action, EqCommand, EqWindow, MainWindow, PlCommand, PlayState, PlaylistWindow, Popup,
+    Action, ArtCommand, ArtWindow, EqCommand, EqWindow, MainWindow, PlCommand, PlayState,
+    PlaylistWindow, Popup,
 };
 use crate::vis::{self, Visualizer};
 
@@ -46,6 +48,10 @@ pub struct App {
     pub main: MainWindow,
     pub pl: PlaylistWindow,
     pub eq: EqWindow,
+    pub art_win: ArtWindow,
+    /// The current track's cover, if it has one.
+    pub art: Option<Art>,
+    art_loader: ArtLoader,
     /// The EQ presets menu, when open.
     pub popup: Option<Popup>,
     pub vis: Visualizer,
@@ -83,6 +89,9 @@ impl App {
             main,
             pl: PlaylistWindow::new(state.playlist_tiles),
             eq,
+            art_win: ArtWindow::new(state.art_open, state.art_tiles),
+            art: None,
+            art_loader: ArtLoader::new(),
             popup: None,
             vis: Visualizer::new(state.vis_mode),
             vis_samples: Vec::new(),
@@ -107,6 +116,8 @@ impl App {
             eq_preamp: self.eq.preamp,
             eq_bands: self.eq.bands,
             playlist_tiles: self.pl.tiles,
+            art_open: self.art_win.open,
+            art_tiles: self.art_win.tiles,
             current: self.playlist.current,
             skin: self.skin_path.clone(),
             scale,
@@ -240,6 +251,12 @@ impl App {
             PlCommand::AddDir => self.open_dialog(Dialog::AddDir, window),
             PlCommand::LoadList => self.open_dialog(Dialog::LoadList, window),
             PlCommand::SaveList => self.open_dialog(Dialog::SaveList, window),
+        }
+    }
+
+    pub fn art_command(&mut self, command: ArtCommand) {
+        match command {
+            ArtCommand::Close => self.art_win.open = false,
         }
     }
 
@@ -387,6 +404,12 @@ impl App {
             self.dialog_result(kind, paths);
         }
         self.playlist.poll_tags();
+        // Follows the current track however it changes: playing, skipping, editing the list.
+        let current = self.playlist.current().map(|e| e.path.as_path());
+        self.art_loader.request(current);
+        if let Some(art) = self.art_loader.poll() {
+            self.art = art;
+        }
         if self.main.state != PlayState::Stopped {
             self.main.elapsed = self.audio.position();
         }

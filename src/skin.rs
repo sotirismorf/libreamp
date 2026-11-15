@@ -108,7 +108,7 @@ const BASE_SKIN: &[u8] = include_bytes!("../skins/libreamp-base.wsz");
 /// Sheet names we care about, lowercase without extension.
 const SHEETS: &[&str] = &[
     "main", "titlebar", "cbuttons", "numbers", "nums_ex", "text", "posbar", "volume", "balance",
-    "shufrep", "monoster", "playpaus", "eqmain", "pledit",
+    "shufrep", "monoster", "playpaus", "eqmain", "pledit", "gen",
 ];
 
 impl Skin {

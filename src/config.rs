@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::ui::art_window;
 use crate::ui::playlist_window::DEFAULT_TILES;
 use crate::vis;
 
@@ -18,6 +19,8 @@ pub struct State {
     pub eq_preamp: f32,
     pub eq_bands: [f32; 10],
     pub playlist_tiles: u32,
+    pub art_open: bool,
+    pub art_tiles: u32,
     pub current: usize,
     pub skin: Option<PathBuf>,
     pub scale: Option<u32>,
@@ -37,6 +40,8 @@ impl Default for State {
             eq_preamp: 0.5,
             eq_bands: [0.5; 10],
             playlist_tiles: DEFAULT_TILES,
+            art_open: false,
+            art_tiles: art_window::DEFAULT_TILES,
             current: 0,
             skin: None,
             scale: None,
@@ -89,6 +94,8 @@ pub fn load() -> State {
             "playlist_tiles" => {
                 state.playlist_tiles = value.parse().unwrap_or(state.playlist_tiles)
             }
+            "art_open" => state.art_open = flag,
+            "art_tiles" => state.art_tiles = value.parse().unwrap_or(state.art_tiles),
             "current" => state.current = value.parse().unwrap_or(0),
             "skin" if !value.is_empty() => state.skin = Some(value.into()),
             "scale" => {
@@ -109,7 +116,7 @@ pub fn save(state: &State) -> std::io::Result<()> {
     let b = |v: bool| if v { 1 } else { 0 };
     let bands: Vec<String> = state.eq_bands.iter().map(f32::to_string).collect();
     let text = format!(
-        "volume={}\nbalance={}\nrepeat={}\nshuffle={}\nplaylist_open={}\nvis={}\neq_open={}\neq_on={}\neq_preamp={}\neq_bands={}\nplaylist_tiles={}\ncurrent={}\nskin={}\nscale={}\n",
+        "volume={}\nbalance={}\nrepeat={}\nshuffle={}\nplaylist_open={}\nvis={}\neq_open={}\neq_on={}\neq_preamp={}\neq_bands={}\nplaylist_tiles={}\nart_open={}\nart_tiles={}\ncurrent={}\nskin={}\nscale={}\n",
         state.volume,
         state.balance,
         b(state.repeat),
@@ -121,6 +128,8 @@ pub fn save(state: &State) -> std::io::Result<()> {
         state.eq_preamp,
         bands.join(","),
         state.playlist_tiles,
+        b(state.art_open),
+        state.art_tiles,
         state.current,
         state
             .skin

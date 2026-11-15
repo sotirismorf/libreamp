@@ -1,10 +1,12 @@
 //! Skinned windows. All coordinates are skin pixels, relative to each window's top-left.
 
+pub mod art_window;
 pub mod eq_window;
 mod main_window;
 pub mod playlist_window;
 mod popup;
 
+pub use art_window::{ArtCommand, ArtWindow};
 pub use eq_window::{EqCommand, EqWindow};
 pub use main_window::{Action, MainWindow, PlayState};
 pub use playlist_window::{PlCommand, PlaylistWindow};

@@ -16,7 +16,7 @@ publish = false
 static-sdl = ["sdl3/build-from-source-static"]
 
 [dependencies]
-image = { version = "0.25.10", default-features = false, features = ["bmp", "png"] }
+image = { version = "0.25.10", default-features = false, features = ["bmp", "jpeg", "png"] }
 sdl3 = { version = "0.22.1", default-features = false }
 symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "flac", "ogg", "vorbis", "wav", "pcm", "isomp4", "aac", "alac", "id3v1", "id3v2"] }
 zip = { version = "9.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }

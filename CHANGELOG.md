@@ -6,6 +6,12 @@ All notable changes to LibreAmp are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Album art panel (Ctrl+I), docked below the playlist and framed with the skin's generic
+  window graphics. Shows the cover embedded in the track, or a `cover`, `folder` or `front`
+  image next to it, at full screen resolution. Resizable; remembered between runs.
+
 ## [0.1.0] - 2026-11-15
 
 First public release.

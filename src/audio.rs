@@ -13,7 +13,7 @@ use symphonia::core::errors::Error as DecodeError;
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo, TrackType};
 use symphonia::core::io::MediaSourceStream;
-use symphonia::core::meta::{MetadataOptions, StandardTag};
+use symphonia::core::meta::{MetadataOptions, StandardTag, StandardVisualKey};
 use symphonia::core::units::{Time, TimeBase};
 
 /// What the UI needs to know about a loaded track.
@@ -38,22 +38,42 @@ struct Source {
     pending_pos: usize,
 }
 
-fn open(path: &Path) -> Result<(Source, TrackInfo), String> {
+/// Opens `path` with whichever container reader recognises it.
+fn probe(path: &Path) -> Result<Box<dyn FormatReader>, String> {
     let file = File::open(path).map_err(|e| e.to_string())?;
-    let file_bytes = file.metadata().map(|m| m.len()).ok();
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
         hint.with_extension(ext);
     }
-    let mut format = symphonia::default::get_probe()
+    symphonia::default::get_probe()
         .probe(
             &hint,
             mss,
             FormatOptions::default(),
             MetadataOptions::default(),
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())
+}
+
+/// The image embedded in a file's tags, still encoded: the front cover if marked, else the
+/// first one.
+pub fn read_cover(path: &Path) -> Option<Vec<u8>> {
+    let mut format = probe(path).ok()?;
+    let mut metadata = format.metadata();
+    let rev = metadata.skip_to_latest()?;
+    let per_track = rev.per_track.iter().flat_map(|t| &t.metadata.visuals);
+    let visuals: Vec<_> = rev.media.visuals.iter().chain(per_track).collect();
+    let cover = visuals
+        .iter()
+        .find(|v| v.usage == Some(StandardVisualKey::FrontCover))
+        .or(visuals.first())?;
+    Some(cover.data.to_vec())
+}
+
+fn open(path: &Path) -> Result<(Source, TrackInfo), String> {
+    let file_bytes = std::fs::metadata(path).map(|m| m.len()).ok();
+    let mut format = probe(path)?;
     let track = format
         .default_track(TrackType::Audio)
         .ok_or("no audio track")?;

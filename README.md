@@ -24,10 +24,13 @@ saved wherever you choose in the save dialog.
 - Classic skins: `.wsz`/`.zip` archives or unpacked skin folders. Anything a skin lacks comes
   from the bundled default skin.
 - Integer scaling that follows the display's scale factor (Ctrl + / Ctrl − to change).
-- Main window, equalizer and playlist, docked in one window.
+- Main window, equalizer and playlist, docked in one window, plus an optional album art panel
+  framed in the skin's own style.
 - MP3, FLAC, Ogg Vorbis, M4A (AAC/ALAC) and WAV; M3U and PLS playlists.
 - 10-band equalizer with Winamp's built-in presets.
 - Spectrum analyzer and oscilloscope in skin colours.
+- Album art from the file's tags (MP3, FLAC, Ogg, M4A) or a `cover`/`folder`/`front` image
+  next to it, drawn at full screen resolution.
 - Playlist text in Terminus, so non-Latin titles (Greek, Cyrillic, …) are readable.
 - Remembers the playlist, EQ, volume, skin and window layout in `~/.config/libreamp`
   (`~/.var/app/io.github.sotirismorf.LibreAmp/config/libreamp` for the Flatpak).
@@ -45,7 +48,7 @@ they are added to it instead. Drop a `.wsz` to change skin. Drag title bars to m
 |---|---|
 | Z X C V B | Previous, play, pause, stop, next |
 | L | Open files |
-| Ctrl+E / Ctrl+G | Show or hide the playlist / equalizer |
+| Ctrl+E / Ctrl+G / Ctrl+I | Show or hide the playlist / equalizer / album art |
 | Ctrl + / Ctrl − | Scale up / down |
 | Ctrl+Q | Quit |
 | Enter, Delete, arrows, Ctrl+A | Play, remove, move and select in the playlist |

@@ -1,4 +1,5 @@
 mod app;
+mod art;
 mod audio;
 mod config;
 mod eq;
@@ -15,6 +16,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
+use image::imageops::FilterType;
 use sdl3::event::{Event, WindowEvent};
 use sdl3::keyboard::{Keycode, Mod};
 use sdl3::mouse::MouseButton;
@@ -27,7 +29,7 @@ use audio::Audio;
 use gfx::Framebuffer;
 use skin::Skin;
 use sprites::{MAIN_H, MAIN_W};
-use ui::{Action, EqWindow, MainWindow, PlaylistWindow};
+use ui::{Action, ArtWindow, EqWindow, MainWindow, PlaylistWindow};
 
 /// Reverse-DNS application ID: the Wayland app_id, desktop file and Flatpak ID.
 pub const APP_ID: &str = "io.github.sotirismorf.LibreAmp";
@@ -89,6 +91,7 @@ enum Target {
     Main,
     Eq,
     Playlist,
+    Art,
     Popup,
 }
 
@@ -189,23 +192,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         app.play_index(0);
     }
 
-    // Window coordinates -> skin pixels factor (density / scale), and where the EQ and playlist
-    // sit (-1 when hidden), shared with the hit-test callback that lets title bars move the window.
+    // Window coordinates -> skin pixels factor (density / scale), and where the EQ, playlist and
+    // art panel sit (-1 when hidden), shared with the hit-test callback that lets title bars
+    // move the window.
     let to_skin = Arc::new(AtomicU32::new(0.5f32.to_bits()));
     let eq_top = Arc::new(AtomicI32::new(-1));
     let pl_top = Arc::new(AtomicI32::new(-1));
+    let art_top = Arc::new(AtomicI32::new(-1));
     {
-        let (to_skin, eq_top, pl_top) = (to_skin.clone(), eq_top.clone(), pl_top.clone());
+        let (to_skin, eq_top, pl_top, art_top) = (
+            to_skin.clone(),
+            eq_top.clone(),
+            pl_top.clone(),
+            art_top.clone(),
+        );
         let result = canvas.window_mut().set_hit_test(move |p| {
             let f = f32::from_bits(to_skin.load(Ordering::Relaxed));
             let (x, y) = ((p.x as f32 * f) as i32, (p.y as f32 * f) as i32);
-            let (eq_y, pl_y) = (
-                eq_top.load(Ordering::Relaxed),
-                pl_top.load(Ordering::Relaxed),
-            );
+            let top = |t: &AtomicI32| Some(t.load(Ordering::Relaxed)).filter(|t| *t >= 0);
             let draggable = MainWindow::is_draggable(x, y)
-                || (eq_y >= 0 && EqWindow::is_draggable(x, y - eq_y))
-                || (pl_y >= 0 && PlaylistWindow::is_draggable(x, y - pl_y));
+                || top(&eq_top).is_some_and(|t| EqWindow::is_draggable(x, y - t))
+                || top(&pl_top).is_some_and(|t| PlaylistWindow::is_draggable(x, y - t))
+                || top(&art_top).is_some_and(|t| ArtWindow::is_draggable(x, y - t));
             if draggable {
                 HitTestResult::Draggable
             } else {
@@ -221,7 +229,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut main_layer = Layer::new(MAIN_W, MAIN_H);
     let mut eq_layer = Layer::new(MAIN_W, ui::eq_window::H);
     let mut pl_layer = Layer::new(MAIN_W, app.pl.height());
+    let mut art_layer = Layer::new(MAIN_W, app.art_win.height());
     let mut popup_layer = Layer::new(1, 1);
+    // The cover scaled to its on-screen size, keyed by (art id, width, height).
+    let mut art_texture: Option<((u64, u32, u32), Texture)> = None;
     let mut scale = args.scale.or(state.scale);
     // The size last asked of the compositor; asked again only when the layout changes, so a
     // tiling compositor that ignores it isn't sent a resize every frame.
@@ -232,24 +243,29 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut next_tick = Instant::now();
 
     while !app.quit {
-        // Windows stack Winamp-style: main, then EQ, then playlist.
-        let eq_y = app.main.eq.then_some(MAIN_H);
-        let pl_y = app
-            .main
-            .pl
-            .then(|| MAIN_H + if app.main.eq { ui::eq_window::H } else { 0 });
-        let total_h = match (eq_y, pl_y) {
-            (_, Some(y)) => y + app.pl.height(),
-            (Some(y), None) => y + ui::eq_window::H,
-            (None, None) => MAIN_H,
+        // Windows stack Winamp-style: main, then EQ, playlist and album art, each when shown.
+        let mut total_h = MAIN_H;
+        let mut stack = |shown: bool, h: i32| {
+            shown.then(|| {
+                total_h += h;
+                total_h - h
+            })
         };
+        let eq_y = stack(app.main.eq, ui::eq_window::H);
+        let pl_y = stack(app.main.pl, app.pl.height());
+        let art_y = stack(app.art_win.open, app.art_win.height());
         eq_top.store(eq_y.unwrap_or(-1), Ordering::Relaxed);
         pl_top.store(pl_y.unwrap_or(-1), Ordering::Relaxed);
-        let target_at = |y: i32| match (eq_y, pl_y) {
-            _ if y < MAIN_H => Some((Target::Main, y)),
-            (_, Some(py)) if y >= py => Some((Target::Playlist, y - py)),
-            (Some(ey), _) if y >= ey => Some((Target::Eq, y - ey)),
-            _ => None,
+        art_top.store(art_y.unwrap_or(-1), Ordering::Relaxed);
+        let target_at = |y: i32| {
+            [
+                (Target::Art, art_y),
+                (Target::Playlist, pl_y),
+                (Target::Eq, eq_y),
+                (Target::Main, Some(0)),
+            ]
+            .into_iter()
+            .find_map(|(t, top)| top.filter(|top| y >= *top).map(|top| (t, y - top)))
         };
 
         // Keep the window an exact integer multiple of the skin in physical pixels.
@@ -287,6 +303,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         app.main.focused = focused;
                         app.eq.focused = focused;
                         app.pl.focused = focused;
+                        app.art_win.focused = focused;
                     }
                     _ => {}
                 },
@@ -330,6 +347,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 app.pl_command(c, canvas.window_mut());
                             }
                         }
+                        Target::Art => app.art_win.mouse_down(x, ly),
                         Target::Popup => {}
                     }
                 }
@@ -350,6 +368,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             if let Some(c) = app.eq.mouse_move(x, y - ey) {
                                 app.eq_command(c, ey, (MAIN_W, total_h));
                             }
+                        }
+                        Some(Target::Art) => {
+                            app.art_win.mouse_move(x, y - art_y.unwrap_or(MAIN_H));
                         }
                         // The playlist also tracks hover over its open menus without a press.
                         _ => {
@@ -390,6 +411,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 app.pl_command(c, canvas.window_mut());
                             }
                         }
+                        Some(Target::Art) => {
+                            let ay = art_y.unwrap_or(MAIN_H);
+                            if let Some(c) = app.art_win.mouse_up(x, y - ay) {
+                                app.art_command(c);
+                            }
+                        }
                         None => {}
                     }
                 }
@@ -403,6 +430,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     let notches = if y > 0.0 { 1 } else { -1 };
                     match target_at(my) {
                         Some((Target::Playlist, _)) => app.pl.wheel(notches * 3, &app.playlist),
+                        Some((Target::Art, _)) => {}
                         Some((Target::Eq, ly)) => {
                             if let Some(c) = app.eq.wheel(mx, ly, notches) {
                                 app.eq_command(c, my - ly, (MAIN_W, total_h));
@@ -441,6 +469,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         Keycode::G if ctrl => {
                             app.main.eq = !app.main.eq;
+                            None
+                        }
+                        Keycode::I if ctrl => {
+                            app.art_win.open = !app.art_win.open;
                             None
                         }
                         Keycode::Z if !ctrl => Some(Action::Prev),
@@ -493,6 +525,33 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             app.pl
                 .draw(&mut pl_layer.fb, &app.skin, &app.playlist, elapsed);
             pl_layer.present(&mut canvas, &textures, y, f)?;
+        }
+        if let Some(y) = art_y {
+            app.art_win
+                .draw(&mut art_layer.fb, &app.skin, app.art.is_some());
+            art_layer.present(&mut canvas, &textures, y, f)?;
+            if let Some(art) = &app.art {
+                // Drawn at screen resolution rather than upscaled, so covers stay detailed.
+                let area = app.art_win.inner();
+                let (bw, bh) = (area.w as u32 * fit, area.h as u32 * fit);
+                let (iw, ih) = art.image.dimensions();
+                let (w, h) = art::fit(iw, ih, bw, bh);
+                let key = (art.id, w, h);
+                let texture = match &mut art_texture {
+                    Some((k, t)) if *k == key => t,
+                    slot => {
+                        let scaled =
+                            image::imageops::resize(&art.image, w, h, FilterType::CatmullRom);
+                        let mut t = textures.create_texture_static(PixelFormat::RGBA32, w, h)?;
+                        t.update(None, scaled.as_raw(), w as usize * 4)?;
+                        &mut slot.insert((key, t)).1
+                    }
+                };
+                let x = area.x as u32 * fit + (bw - w) / 2;
+                let y = (y + area.y) as u32 * fit + (bh - h) / 2;
+                let dst = FRect::new(x as f32, y as f32, w as f32, h as f32);
+                canvas.copy(texture, None, dst)?;
+            }
         }
         if let Some(popup) = &app.popup {
             popup.draw(&mut popup_layer.fb, app.skin.playlist_colors);
