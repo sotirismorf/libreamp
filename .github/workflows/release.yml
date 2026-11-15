@@ -43,20 +43,21 @@ jobs:
   flatpak:
     needs: check-version
     runs-on: ubuntu-24.04
+    # Flathub's own build image and action: flatpak-builder and AppStream tooling as Flathub
+    # uses them (Ubuntu's appstreamcli is too old to compose the metadata).
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
+      options: --privileged
     steps:
       - uses: actions/checkout@v7
-      - name: Install flatpak-builder
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder
-          # Ubuntu's AppArmor default blocks the unprivileged user namespaces bubblewrap needs.
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-      - run: packaging/flatpak/build.sh
-      - uses: actions/upload-artifact@v7
+      - name: Bundle name
+        id: bundle
+        run: echo "name=LibreAmp-${GITHUB_REF_NAME#v}-x86_64.flatpak" >> "$GITHUB_OUTPUT"
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
-          name: flatpak
-          path: dist/*
-          if-no-files-found: error
+          manifest-path: packaging/flatpak/io.github.sotirismorf.LibreAmp.yml
+          bundle: ${{ steps.bundle.outputs.name }}
+          artifact-name: flatpak
 
   release:
     needs: [appimage, flatpak]
