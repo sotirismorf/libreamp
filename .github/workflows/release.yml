@@ -54,13 +54,15 @@ jobs:
       - name: Install flatpak and Flathub's flatpak-builder
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends flatpak
+          sudo apt-get install -y --no-install-recommends flatpak dbus
           # Ubuntu's AppArmor default blocks the unprivileged user namespaces bubblewrap needs.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
           # Brings its own current AppStream tooling; Ubuntu's is too old to compose metadata.
           flatpak install --user --noninteractive flathub org.flatpak.Builder
-      - run: packaging/flatpak/build.sh
+      # Flathub's builder runs flatpak inside its sandbox, which needs a D-Bus session bus;
+      # CI runners have none, so give the build a throwaway one.
+      - run: dbus-run-session -- packaging/flatpak/build.sh
       - uses: actions/upload-artifact@v7
         with:
           name: flatpak
