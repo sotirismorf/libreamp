@@ -6,33 +6,6 @@ All notable changes to LibreAmp are listed here. The format follows
 
 ## [Unreleased]
 
-### Added
-
-- Album art panel (Ctrl+I), docked below the playlist and framed with the skin's generic
-  window graphics (`gen.bmp`); skins without them get a plain border in their playlist
-  colours instead of the default skin's frame. Shows the cover embedded in the track, or a
-  `cover`, `folder` or `front` image next to it, at full screen resolution. Square by
-  default; resizable from its bottom-right corner (dragging back near square snaps to
-  square); remembered between runs.
-- Right-click menu: show or hide the equalizer, playlist and album art; choose the
-  visualizer, scale and skin, including going back to the default skin or opening one with
-  a file dialog. Works with the mouse or the arrow keys. Submenus stay open while the
-  pointer heads into them, even across other items.
-- Skin collection: every skin loaded (dropped, opened or given on the command line) is copied
-  to `~/.local/share/libreamp/skins`, without duplicates, and listed in the Skin submenu.
-  Menus too long for the window scroll.
-- Shaped skins: the parts a skin's `region.txt` cuts out of the main window and equalizer
-  are see-through (they were black) and ignore clicks.
-- Resumes where you left off: the track that was playing or paused at exit comes back paused
-  at the same position.
-
-### Changed
-
-- Sizes are now 100%, 150% and 200% of the classic skin (default 200%), the same on any
-  display. 150% on a standard display stays sharp: it is drawn at 200% and shrunk smoothly
-  rather than with uneven pixels. `--scale` takes a percentage; a previously saved scale
-  resets to 200%.
-
 ## [0.1.0] - 2026-11-15
 
 First public release.
@@ -40,15 +13,22 @@ First public release.
 ### Added
 
 - Classic Winamp 2 skins (`.wsz`, `.zip` or unpacked folders), with missing parts filled in
-  from the default skin.
+  from the default skin. Shaped skins (`region.txt`) get see-through windows.
 - Default skin: Winamp's classic base skin, rebranded LibreAmp.
-- Integer scaling with nearest-neighbour sampling that follows the display's scale factor.
+- Skin collection: every skin loaded is copied to `~/.local/share/libreamp/skins` and listed
+  in the right-click menu.
+- Sizes of 100%, 150% and 200% (the default), the same on any display and pixel-sharp,
+  including 150% on standard displays.
 - Main window, equalizer and playlist editor, docked in one window.
+- Album art panel (Ctrl+I): the cover embedded in the track, or a `cover`, `folder` or
+  `front` image next to it, at full screen resolution. Framed with the skin's `gen.bmp`, or
+  a plain border in its playlist colours; square by default and resizable.
+- Right-click menu for the windows, visualizer, size and skin, with keyboard navigation.
 - MP3, FLAC, Ogg Vorbis, M4A (AAC and ALAC) and WAV playback; M3U and PLS playlists.
 - 10-band equalizer with Winamp's presets.
 - Spectrum analyzer and oscilloscope.
 - Playlist text in Terminus, covering Greek, Cyrillic and other non-Latin scripts.
-- Settings, playlist and skin remembered between runs.
+- Remembers settings, playlist, skin and the playback position between runs.
 - AppImage and Flatpak builds.
 
 [Unreleased]: https://github.com/sotirismorf/libreamp/compare/v0.1.0...HEAD

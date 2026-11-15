@@ -63,6 +63,13 @@
     <release version="0.1.0" date="2026-11-15">
       <description>
         <p>First public release.</p>
+        <ul>
+          <li>Classic Winamp 2 skins, shaped skins and a skin collection</li>
+          <li>Pixel-sharp sizes of 100%, 150% and 200%</li>
+          <li>Equalizer, playlist and an album art panel, docked together</li>
+          <li>Right-click menu for windows, visualizer, size and skin</li>
+          <li>Resumes where you left off</li>
+        </ul>
       </description>
     </release>
   </releases>
