@@ -1,0 +1,26 @@
+[package]
+name = "libreamp"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "A music player for classic Winamp skins, with pixel-perfect integer scaling"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/sotirismorf/libreamp"
+readme = "README.md"
+keywords = ["music", "player", "audio", "winamp", "skins"]
+categories = ["multimedia::audio"]
+publish = false
+
+[features]
+# Builds SDL 3 from source and links it statically, for systems without SDL 3 (the AppImage).
+static-sdl = ["sdl3/build-from-source-static"]
+
+[dependencies]
+image = { version = "0.25.10", default-features = false, features = ["bmp", "png"] }
+sdl3 = { version = "0.22.1", default-features = false }
+symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "flac", "ogg", "vorbis", "wav", "pcm", "isomp4", "aac", "alac", "id3v1", "id3v2"] }
+zip = { version = "9.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[profile.release]
+lto = true
+strip = true

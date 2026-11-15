@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=LibreAmp
+GenericName=Music Player
+Comment=Play music in classic Winamp skins
+Exec=libreamp %F
+Icon=io.github.sotirismorf.LibreAmp
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+Keywords=music;audio;player;skin;winamp;playlist;equalizer;mp3;flac;ogg;
+MimeType=audio/mpeg;audio/flac;audio/x-flac;audio/ogg;audio/x-vorbis+ogg;audio/vorbis;audio/wav;audio/x-wav;audio/mp4;audio/x-m4a;audio/aac;audio/x-mpegurl;audio/mpegurl;audio/x-scpls;
+StartupWMClass=io.github.sotirismorf.LibreAmp
+SingleMainWindow=true

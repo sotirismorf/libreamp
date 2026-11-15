@@ -1,0 +1,14 @@
+/target
+
+# Only the bundled default skin belongs in the repo; keep test skins elsewhere.
+/skins/*
+!/skins/libreamp-base.wsz
+
+# Packaging output (packaging/*/build.sh).
+/build
+/dist
+/.flatpak-builder
+/packaging/flatpak/cargo-sources.json
+
+# Python bytecode from tools/.
+__pycache__/

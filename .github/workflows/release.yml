@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check-version:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches Cargo.toml, metainfo and changelog
+        run: |
+          v=${GITHUB_REF_NAME#v}
+          fail=0
+          grep -q "^version = \"$v\"$" Cargo.toml || { echo "::error::Cargo.toml version is not $v"; fail=1; }
+          grep -q "<release version=\"$v\"" packaging/*.metainfo.xml || { echo "::error::metainfo has no <release> for $v"; fail=1; }
+          grep -q "^## \[$v\]" CHANGELOG.md || { echo "::error::CHANGELOG.md has no section for $v"; fail=1; }
+          exit $fail
+
+  appimage:
+    needs: check-version
+    # The oldest supported Ubuntu, so the AppImage runs on distributions with older glibc.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: packaging/install-sdl-build-deps.sh
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: packaging/appimage/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: dist/*
+          if-no-files-found: error
+
+  flatpak:
+    needs: check-version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder \
+            python3-aiohttp python3-tomlkit python3-toml
+          # Ubuntu's AppArmor default blocks the unprivileged user namespaces bubblewrap needs.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: packaging/flatpak/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: [appimage, flatpak]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS
+      - name: Release notes from CHANGELOG.md
+        run: |
+          v=${GITHUB_REF_NAME#v}
+          awk -v v="$v" '/^## \[/ { if (on) exit; on = index($0, "[" v "]") > 0; next } on' \
+            CHANGELOG.md > notes.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: LibreAmp ${{ github.ref_name }}
+          body_path: notes.md
+          files: dist/*
+          prerelease: ${{ contains(github.ref_name, '-') }}

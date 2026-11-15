@@ -1,0 +1,44 @@
+id: io.github.sotirismorf.LibreAmp
+runtime: org.freedesktop.Platform
+runtime-version: '26.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: libreamp
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+  - --socket=pulseaudio
+  # Playlists hold absolute paths and skins can live anywhere, so read the music where it is.
+  - --filesystem=home:ro
+  - --filesystem=xdg-music:ro
+  - --filesystem=/media:ro
+  - --filesystem=/run/media:ro
+  - --filesystem=/mnt:ro
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/libreamp/cargo
+    CARGO_NET_OFFLINE: 'true'
+modules:
+  - name: libreamp
+    buildsystem: simple
+    build-commands:
+      # Links the runtime's SDL 3.
+      - cargo --offline fetch --manifest-path Cargo.toml --verbose
+      - cargo --offline build --release --locked --verbose
+      - install -Dm755 target/release/libreamp -t /app/bin
+      - install -Dm644 packaging/io.github.sotirismorf.LibreAmp.desktop -t /app/share/applications
+      - install -Dm644 packaging/io.github.sotirismorf.LibreAmp.metainfo.xml -t /app/share/metainfo
+      - install -Dm644 packaging/io.github.sotirismorf.LibreAmp.svg -t /app/share/icons/hicolor/scalable/apps
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - target
+          - dist
+          - build
+          - .flatpak-builder
+      - cargo-sources.json
