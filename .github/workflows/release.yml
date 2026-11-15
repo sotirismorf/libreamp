@@ -76,7 +76,7 @@ jobs:
           v=${GITHUB_REF_NAME#v}
           awk -v v="$v" '/^## \[/ { if (on) exit; on = index($0, "[" v "]") > 0; next } on' \
             CHANGELOG.md > notes.md
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           name: LibreAmp ${{ github.ref_name }}
           body_path: notes.md
