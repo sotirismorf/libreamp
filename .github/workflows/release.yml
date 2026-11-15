@@ -48,8 +48,7 @@ jobs:
       - name: Install flatpak-builder
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder \
-            python3-aiohttp python3-tomlkit python3-toml
+          sudo apt-get install -y --no-install-recommends flatpak flatpak-builder
           # Ubuntu's AppArmor default blocks the unprivileged user namespaces bubblewrap needs.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: packaging/flatpak/build.sh

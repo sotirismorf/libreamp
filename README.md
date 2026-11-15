@@ -69,8 +69,7 @@ and links it in. That needs CMake and SDL's build dependencies;
 
 - `packaging/appimage/build.sh` builds `dist/LibreAmp-<version>-x86_64.AppImage`.
 - `packaging/flatpak/build.sh` builds `dist/LibreAmp-<version>-x86_64.flatpak` (needs
-  `flatpak-builder`, plus Python's `aiohttp` and `tomlkit` to generate the offline cargo
-  sources).
+  `flatpak-builder`).
 
 Pushing a `v*` tag builds both on GitHub Actions and publishes a release; see
 [RELEASING.md](RELEASING.md).

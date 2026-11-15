@@ -8,7 +8,6 @@
 /build
 /dist
 /.flatpak-builder
-/packaging/flatpak/cargo-sources.json
 
 # Python bytecode from tools/.
 __pycache__/

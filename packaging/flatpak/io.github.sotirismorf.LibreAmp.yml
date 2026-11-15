@@ -19,16 +19,17 @@ finish-args:
   - --filesystem=/mnt:ro
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin
+  # Cargo downloads crates during the build (pinned by Cargo.lock).
+  build-args:
+    - --share=network
   env:
     CARGO_HOME: /run/build/libreamp/cargo
-    CARGO_NET_OFFLINE: 'true'
 modules:
   - name: libreamp
     buildsystem: simple
     build-commands:
       # Links the runtime's SDL 3.
-      - cargo --offline fetch --manifest-path Cargo.toml --verbose
-      - cargo --offline build --release --locked --verbose
+      - cargo build --release --locked
       - install -Dm755 target/release/libreamp -t /app/bin
       - install -Dm644 packaging/io.github.sotirismorf.LibreAmp.desktop -t /app/share/applications
       - install -Dm644 packaging/io.github.sotirismorf.LibreAmp.metainfo.xml -t /app/share/metainfo
@@ -41,4 +42,3 @@ modules:
           - dist
           - build
           - .flatpak-builder
-      - cargo-sources.json
