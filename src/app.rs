@@ -15,9 +15,10 @@ use crate::config::{self, State};
 use crate::eq;
 use crate::playlist::Playlist;
 use crate::skin::Skin;
+use crate::ui::menu::{Entry, Menu};
 use crate::ui::{
     Action, ArtCommand, ArtWindow, EqCommand, EqWindow, MainWindow, PlCommand, PlayState,
-    PlaylistWindow, Popup,
+    PlaylistWindow,
 };
 use crate::vis::{self, Visualizer};
 
@@ -29,6 +30,23 @@ enum Dialog {
     AddDir,
     LoadList,
     SaveList,
+    Skin,
+}
+
+/// What a menu item does.
+#[derive(Clone, Copy, Debug)]
+pub enum MenuCommand {
+    ToggleEq,
+    TogglePlaylist,
+    ToggleArt,
+    Vis(vis::Mode),
+    /// Size in percent.
+    Scale(u32),
+    DefaultSkin,
+    OpenSkin,
+    Quit,
+    /// An EQ preset; None resets to flat.
+    Preset(Option<usize>),
 }
 
 const AUDIO_FILTER: DialogFileFilter = DialogFileFilter {
@@ -38,6 +56,10 @@ const AUDIO_FILTER: DialogFileFilter = DialogFileFilter {
 const LIST_FILTER: DialogFileFilter = DialogFileFilter {
     name: "Playlists",
     pattern: "m3u;m3u8;pls",
+};
+const SKIN_FILTER: DialogFileFilter = DialogFileFilter {
+    name: "Winamp skins",
+    pattern: "wsz;zip",
 };
 
 pub struct App {
@@ -52,8 +74,10 @@ pub struct App {
     /// The current track's cover, if it has one.
     pub art: Option<Art>,
     art_loader: ArtLoader,
-    /// The EQ presets menu, when open.
-    pub popup: Option<Popup>,
+    /// The open popup menu: right-click menu or EQ presets.
+    pub menu: Option<Menu<MenuCommand>>,
+    /// Size in percent of the classic skin size, one of `crate::SCALES`.
+    pub scale: u32,
     pub vis: Visualizer,
     vis_samples: Vec<f32>,
     pub quit: bool,
@@ -89,10 +113,11 @@ impl App {
             main,
             pl: PlaylistWindow::new(state.playlist_tiles),
             eq,
-            art_win: ArtWindow::new(state.art_open, state.art_tiles),
+            art_win: ArtWindow::new(state.art_open, state.art_height),
             art: None,
             art_loader: ArtLoader::new(),
-            popup: None,
+            menu: None,
+            scale: state.scale,
             vis: Visualizer::new(state.vis_mode),
             vis_samples: Vec::new(),
             quit: false,
@@ -103,7 +128,7 @@ impl App {
         }
     }
 
-    pub fn state(&self, scale: Option<u32>) -> State {
+    pub fn state(&self) -> State {
         State {
             volume: self.main.volume,
             balance: self.main.balance,
@@ -117,10 +142,11 @@ impl App {
             eq_bands: self.eq.bands,
             playlist_tiles: self.pl.tiles,
             art_open: self.art_win.open,
-            art_tiles: self.art_win.tiles,
+            art_height: self.art_win.art_h,
             current: self.playlist.current,
             skin: self.skin_path.clone(),
-            scale,
+            scale: self.scale,
+            position: (self.main.state != PlayState::Stopped).then_some(self.main.elapsed),
         }
     }
 
@@ -134,12 +160,17 @@ impl App {
     }
 
     pub fn play_current(&mut self) {
+        self.load_current(false);
+    }
+
+    /// Opens the current track, playing or paused at its start. False if it can't be played.
+    fn load_current(&mut self, paused: bool) -> bool {
         let index = self.playlist.current;
         let Some(entry) = self.playlist.entries.get_mut(index) else {
-            return;
+            return false;
         };
         let ui = &mut self.main;
-        match self.audio.play(&entry.path) {
+        let ok = match self.audio.load(&entry.path, paused) {
             Ok(info) => {
                 entry.title.get_or_insert(info.title);
                 entry.duration = entry.duration.or(info.duration);
@@ -149,7 +180,12 @@ impl App {
                 ui.khz = Some((info.rate as f32 / 1000.0).round() as u32);
                 ui.channels = info.channels;
                 ui.elapsed = 0.0;
-                ui.state = PlayState::Playing;
+                ui.state = if paused {
+                    PlayState::Paused
+                } else {
+                    PlayState::Playing
+                };
+                true
             }
             Err(e) => {
                 eprintln!("libreamp: {}: {e}", entry.path.display());
@@ -157,9 +193,11 @@ impl App {
                 ui.title = format!("{}. error: {e}", index + 1);
                 ui.state = PlayState::Stopped;
                 ui.duration = None;
+                false
             }
-        }
+        };
         self.pl.ensure_visible(index);
+        ok
     }
 
     fn stop(&mut self) {
@@ -266,17 +304,79 @@ impl App {
             EqCommand::Changed => self.push_eq(),
             EqCommand::Close => self.main.eq = false,
             EqCommand::Presets { x, y } => {
-                let mut items = vec!["Reset (flat)".to_string()];
-                items.extend(eq::PRESETS.iter().map(|(name, ..)| name.to_string()));
+                let mut entries = vec![Entry::item("Reset (flat)", MenuCommand::Preset(None))];
+                entries.extend(
+                    (eq::PRESETS.iter().enumerate())
+                        .map(|(i, (name, ..))| Entry::item(*name, MenuCommand::Preset(Some(i)))),
+                );
                 let (w, h) = window_size;
-                self.popup = Some(Popup::new(items, x, origin_y + y, w, h));
+                self.menu = Some(Menu::new(entries, x, origin_y + y, w, h));
             }
         }
     }
 
-    /// Applies the preset chosen from the presets menu (0 is "reset").
-    pub fn choose_preset(&mut self, index: usize) {
-        match index.checked_sub(1).and_then(|i| eq::PRESETS.get(i)) {
+    /// Opens the right-click menu at (x, y), within a `window_size` window.
+    pub fn open_menu(&mut self, x: i32, y: i32, window_size: (i32, i32)) {
+        use MenuCommand::*;
+        let vis = |label, mode| Entry::item(label, Vis(mode)).radio(self.vis.mode == mode);
+        let scales = (crate::SCALES.iter())
+            .map(|n| Entry::item(format!("{n}%"), Scale(*n)).radio(self.scale == *n))
+            .collect();
+        let entries = vec![
+            Entry::item("Equalizer", ToggleEq)
+                .checked(self.main.eq)
+                .shortcut("Ctrl+G"),
+            Entry::item("Playlist", TogglePlaylist)
+                .checked(self.main.pl)
+                .shortcut("Ctrl+E"),
+            Entry::item("Album art", ToggleArt)
+                .checked(self.art_win.open)
+                .shortcut("Ctrl+I"),
+            Entry::Separator,
+            Entry::submenu(
+                "Visualizer",
+                vec![
+                    vis("Spectrum", vis::Mode::Spectrum),
+                    vis("Oscilloscope", vis::Mode::Oscilloscope),
+                    vis("Off", vis::Mode::Off),
+                ],
+            ),
+            Entry::submenu("Scale", scales),
+            Entry::submenu(
+                "Skin",
+                vec![
+                    Entry::item("Default skin", DefaultSkin).radio(self.skin_path.is_none()),
+                    Entry::item("Open skin…", OpenSkin),
+                ],
+            ),
+            Entry::Separator,
+            Entry::item("Quit", Quit).shortcut("Ctrl+Q"),
+        ];
+        let (w, h) = window_size;
+        self.menu = Some(Menu::new(entries, x, y, w, h));
+    }
+
+    pub fn menu_command(&mut self, command: MenuCommand, window: &mut Window) {
+        self.menu = None;
+        match command {
+            MenuCommand::ToggleEq => self.main.eq = !self.main.eq,
+            MenuCommand::TogglePlaylist => self.main.pl = !self.main.pl,
+            MenuCommand::ToggleArt => self.art_win.open = !self.art_win.open,
+            MenuCommand::Vis(mode) => self.vis.mode = mode,
+            MenuCommand::Scale(scale) => self.scale = scale,
+            MenuCommand::DefaultSkin => {
+                self.skin = Skin::base();
+                self.skin_path = None;
+            }
+            MenuCommand::OpenSkin => self.open_dialog(Dialog::Skin, window),
+            MenuCommand::Quit => self.quit = true,
+            MenuCommand::Preset(preset) => self.choose_preset(preset),
+        }
+    }
+
+    /// Applies an EQ preset, or flat for None.
+    fn choose_preset(&mut self, preset: Option<usize>) {
+        match preset.and_then(|i| eq::PRESETS.get(i)) {
             Some((_, preamp, bands)) => {
                 self.eq.preamp = eq::preset_value(*preamp);
                 self.eq.bands = bands.map(eq::preset_value);
@@ -318,6 +418,7 @@ impl App {
                 show_open_file_dialog(&[LIST_FILTER], home, false, window, callback)
             }
             Dialog::SaveList => show_save_file_dialog(&[LIST_FILTER], home, window, callback),
+            Dialog::Skin => show_open_file_dialog(&[SKIN_FILTER], home, false, window, callback),
         };
         if let Err(e) = result {
             eprintln!("libreamp: file dialog: {e:?}");
@@ -347,6 +448,17 @@ impl App {
                     eprintln!("libreamp: {}: {e}", path.display());
                 }
             }
+            Dialog::Skin => self.load_skin(&paths[0]),
+        }
+    }
+
+    fn load_skin(&mut self, path: &Path) {
+        match Skin::load(path) {
+            Ok(s) => {
+                self.skin = s;
+                self.skin_path = std::fs::canonicalize(path).ok();
+            }
+            Err(e) => eprintln!("libreamp: {e}"),
         }
     }
 
@@ -360,13 +472,7 @@ impl App {
 
     pub fn drop_file(&mut self, path: &Path) {
         if crate::skin::is_skin(path) {
-            match Skin::load(path) {
-                Ok(s) => {
-                    self.skin = s;
-                    self.skin_path = std::fs::canonicalize(path).ok();
-                }
-                Err(e) => eprintln!("libreamp: {e}"),
-            }
+            self.load_skin(path);
             return;
         }
         if !self.drop_started {
@@ -400,6 +506,8 @@ impl App {
 
     /// Per-frame housekeeping: dialog results, tags, position, end of track.
     pub fn update(&mut self) {
+        // The album art panel uses the skin's own gen.bmp frame, or none.
+        self.art_win.framed = self.skin.has_own("gen");
         while let Ok((kind, paths)) = self.dialog_rx.try_recv() {
             self.dialog_result(kind, paths);
         }
@@ -424,7 +532,9 @@ impl App {
     }
 
     /// Restores the saved playlist (without playing) when nothing was given on the command line.
-    pub fn restore_playlist(&mut self, current: usize) {
+    /// Restores the saved playlist, with the current track paused at `position` seconds if it
+    /// was playing or paused when LibreAmp last closed.
+    pub fn restore_playlist(&mut self, current: usize, position: Option<f32>) {
         if let Some(path) = config::playlist_path()
             && path.exists()
             && let Err(e) = self.playlist.load_list(&path)
@@ -436,15 +546,22 @@ impl App {
             let title = self.playlist.entries[current].display_title();
             self.main.title = format!("{}. {}", current + 1, title);
             self.pl.ensure_visible(current);
+            if let Some(secs) = position
+                && self.load_current(true)
+            {
+                if secs > 0.0 && self.main.duration.is_none_or(|d| secs < d) {
+                    self.audio.seek(secs);
+                }
+                self.main.elapsed = self.audio.position();
+            }
         }
     }
 
-    pub fn save(&self, scale: Option<u32>) {
-        let result =
-            config::save(&self.state(scale)).and_then(|()| match config::playlist_path() {
-                Some(path) => config::write_atomic(&path, &self.playlist.to_m3u()),
-                None => Ok(()),
-            });
+    pub fn save(&self) {
+        let result = config::save(&self.state()).and_then(|()| match config::playlist_path() {
+            Some(path) => config::write_atomic(&path, &self.playlist.to_m3u()),
+            None => Ok(()),
+        });
         if let Err(e) = result {
             eprintln!("libreamp: saving state: {e}");
         }

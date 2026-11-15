@@ -3,7 +3,6 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::ui::art_window;
 use crate::ui::playlist_window::DEFAULT_TILES;
 use crate::vis;
 
@@ -20,10 +19,14 @@ pub struct State {
     pub eq_bands: [f32; 10],
     pub playlist_tiles: u32,
     pub art_open: bool,
-    pub art_tiles: u32,
+    /// Height of the album art area in skin pixels; None keeps it square.
+    pub art_height: Option<i32>,
     pub current: usize,
     pub skin: Option<PathBuf>,
-    pub scale: Option<u32>,
+    /// Size in percent.
+    pub scale: u32,
+    /// Seconds into the current track, when it was playing or paused at exit.
+    pub position: Option<f32>,
 }
 
 impl Default for State {
@@ -41,10 +44,11 @@ impl Default for State {
             eq_bands: [0.5; 10],
             playlist_tiles: DEFAULT_TILES,
             art_open: false,
-            art_tiles: art_window::DEFAULT_TILES,
+            art_height: None,
             current: 0,
             skin: None,
-            scale: None,
+            scale: crate::DEFAULT_SCALE,
+            position: None,
         }
     }
 }
@@ -95,15 +99,12 @@ pub fn load() -> State {
                 state.playlist_tiles = value.parse().unwrap_or(state.playlist_tiles)
             }
             "art_open" => state.art_open = flag,
-            "art_tiles" => state.art_tiles = value.parse().unwrap_or(state.art_tiles),
+            "art_height" => state.art_height = value.parse().ok(),
+            "position" => state.position = value.parse().ok().filter(|p: &f32| p.is_finite()),
             "current" => state.current = value.parse().unwrap_or(0),
             "skin" if !value.is_empty() => state.skin = Some(value.into()),
-            "scale" => {
-                state.scale = value
-                    .parse()
-                    .ok()
-                    .filter(|n| (1..=crate::MAX_SCALE).contains(n))
-            }
+            // Older versions saved a pixel multiple (1, 2, …), which falls back to the default.
+            "scale" => state.scale = crate::parse_scale(value).unwrap_or(crate::DEFAULT_SCALE),
             _ => {}
         }
     }
@@ -116,7 +117,7 @@ pub fn save(state: &State) -> std::io::Result<()> {
     let b = |v: bool| if v { 1 } else { 0 };
     let bands: Vec<String> = state.eq_bands.iter().map(f32::to_string).collect();
     let text = format!(
-        "volume={}\nbalance={}\nrepeat={}\nshuffle={}\nplaylist_open={}\nvis={}\neq_open={}\neq_on={}\neq_preamp={}\neq_bands={}\nplaylist_tiles={}\nart_open={}\nart_tiles={}\ncurrent={}\nskin={}\nscale={}\n",
+        "volume={}\nbalance={}\nrepeat={}\nshuffle={}\nplaylist_open={}\nvis={}\neq_open={}\neq_on={}\neq_preamp={}\neq_bands={}\nplaylist_tiles={}\nart_open={}\nart_height={}\ncurrent={}\nposition={}\nskin={}\nscale={}\n",
         state.volume,
         state.balance,
         b(state.repeat),
@@ -129,14 +130,15 @@ pub fn save(state: &State) -> std::io::Result<()> {
         bands.join(","),
         state.playlist_tiles,
         b(state.art_open),
-        state.art_tiles,
+        state.art_height.map(|h| h.to_string()).unwrap_or_default(),
         state.current,
+        state.position.map(|p| p.to_string()).unwrap_or_default(),
         state
             .skin
             .as_ref()
             .map(|p| p.display().to_string())
             .unwrap_or_default(),
-        state.scale.map(|s| s.to_string()).unwrap_or_default(),
+        state.scale,
     );
     write_atomic(&dir.join("state"), &text)
 }

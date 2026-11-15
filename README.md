@@ -1,7 +1,7 @@
 # LibreAmp
 
-A music player for Linux (Wayland first) that uses classic Winamp `.wsz` skins and scales
-them by whole numbers with nearest-neighbour sampling, so skins stay sharp on HiDPI screens.
+A music player for Linux (Wayland first) that uses classic Winamp `.wsz` skins and keeps them
+pixel-sharp at any size, on standard and HiDPI screens alike.
 
 The UI is drawn at 1x into a small framebuffer and upscaled by SDL3; audio is decoded with
 symphonia and played through SDL3.
@@ -22,10 +22,14 @@ saved wherever you choose in the save dialog.
 ## Features
 
 - Classic skins: `.wsz`/`.zip` archives or unpacked skin folders. Anything a skin lacks comes
-  from the bundled default skin.
-- Integer scaling that follows the display's scale factor (Ctrl + / Ctrl − to change).
-- Main window, equalizer and playlist, docked in one window, plus an optional album art panel
-  framed in the skin's own style.
+  from the bundled default skin. Shaped skins (`region.txt`) get see-through windows.
+- Sizes of 100%, 150% and 200% (Winamp's "double size", the default), the same on any display
+  (Ctrl + / Ctrl − to change). Whole screen pixels per skin pixel are drawn nearest-neighbour;
+  in-between sizes (150% on a standard display) are drawn at the next whole size and shrunk
+  smoothly, so pixels stay even and sharp instead of lopsided or blurry.
+- Main window, equalizer and playlist, docked in one window, plus an optional album art panel:
+  framed with the skin's `gen.bmp` when it has one, otherwise a plain border in the skin's
+  playlist colours, so it always matches.
 - MP3, FLAC, Ogg Vorbis, M4A (AAC/ALAC) and WAV; M3U and PLS playlists.
 - 10-band equalizer with Winamp's built-in presets.
 - Spectrum analyzer and oscilloscope in skin colours.
@@ -38,18 +42,21 @@ saved wherever you choose in the save dialog.
 ## Using it
 
 ```sh
-libreamp [--scale N] [skin.wsz] [files, folders or playlists...]
+libreamp [--scale 100|150|200] [skin.wsz] [files, folders or playlists...]
 ```
 
 Drop audio files, folders or playlists on the window to play them; while the playlist is open
 they are added to it instead. Drop a `.wsz` to change skin. Drag title bars to move the window.
+
+Right-click anywhere for the menu: show or hide the equalizer, playlist and album art, and pick
+the visualizer, scale and skin (including going back to the default skin).
 
 | Key | Action |
 |---|---|
 | Z X C V B | Previous, play, pause, stop, next |
 | L | Open files |
 | Ctrl+E / Ctrl+G / Ctrl+I | Show or hide the playlist / equalizer / album art |
-| Ctrl + / Ctrl − | Scale up / down |
+| Ctrl + / Ctrl − | Larger / smaller (100%, 150%, 200%) |
 | Ctrl+Q | Quit |
 | Enter, Delete, arrows, Ctrl+A | Play, remove, move and select in the playlist |
 

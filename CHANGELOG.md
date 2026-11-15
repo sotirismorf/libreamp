@@ -9,8 +9,25 @@ All notable changes to LibreAmp are listed here. The format follows
 ### Added
 
 - Album art panel (Ctrl+I), docked below the playlist and framed with the skin's generic
-  window graphics. Shows the cover embedded in the track, or a `cover`, `folder` or `front`
-  image next to it, at full screen resolution. Resizable; remembered between runs.
+  window graphics (`gen.bmp`); skins without them get a plain border in their playlist
+  colours instead of the default skin's frame. Shows the cover embedded in the track, or a
+  `cover`, `folder` or `front` image next to it, at full screen resolution. Square by
+  default; resizable from its bottom-right corner (dragging back near square snaps to
+  square); remembered between runs.
+- Right-click menu: show or hide the equalizer, playlist and album art; choose the
+  visualizer, scale and skin, including going back to the default skin or opening one with
+  a file dialog. Works with the mouse or the arrow keys.
+- Shaped skins: the parts a skin's `region.txt` cuts out of the main window and equalizer
+  are see-through (they were black) and ignore clicks.
+- Resumes where you left off: the track that was playing or paused at exit comes back paused
+  at the same position.
+
+### Changed
+
+- Sizes are now 100%, 150% and 200% of the classic skin (default 200%), the same on any
+  display. 150% on a standard display stays sharp: it is drawn at 200% and shrunk smoothly
+  rather than with uneven pixels. `--scale` takes a percentage; a previously saved scale
+  resets to 200%.
 
 ## [0.1.0] - 2026-11-15
 

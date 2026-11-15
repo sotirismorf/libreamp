@@ -3,14 +3,13 @@
 pub mod art_window;
 pub mod eq_window;
 mod main_window;
+pub mod menu;
 pub mod playlist_window;
-mod popup;
 
 pub use art_window::{ArtCommand, ArtWindow};
 pub use eq_window::{EqCommand, EqWindow};
 pub use main_window::{Action, MainWindow, PlayState};
 pub use playlist_window::{PlCommand, PlaylistWindow};
-pub use popup::Popup;
 
 use crate::gfx::{Framebuffer, Rect, rect};
 use crate::sprites::{GLYPH_H, GLYPH_W};

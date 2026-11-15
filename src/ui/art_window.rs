@@ -1,6 +1,7 @@
 //! The album art panel, framed with the skin's generic window graphics (gen.bmp), as classic
-//! Winamp did for plugin windows. The art itself is drawn by the caller over `inner()`, at
-//! full screen resolution.
+//! Winamp did for plugin windows. Skins without their own gen.bmp get no frame instead, just a
+//! thin border in the playlist colours, so the panel never clashes with the skin. The art
+//! itself is drawn by the caller over `inner()`, at full screen resolution.
 
 use crate::font;
 use crate::gfx::{Framebuffer, Rect, rect};
@@ -12,10 +13,11 @@ const BOTTOM_H: i32 = 14;
 const TILE_H: i32 = 29;
 const LEFT_W: i32 = 11;
 const RIGHT_W: i32 = 8;
-pub const MIN_TILES: u32 = 2;
-/// 8 tiles make a 256 x 232 area for the art.
-pub const DEFAULT_TILES: u32 = 8;
-pub const MAX_TILES: u32 = 30;
+/// Limits on the art area's height; its width is fixed by the window.
+const MIN_ART_H: i32 = 58;
+const MAX_ART_H: i32 = 870;
+/// Resizing to within this many pixels of square snaps back to square.
+const SNAP: i32 = 8;
 
 const CLOSE: Rect = rect(W - 11, 3, 9, 9);
 const TITLE: &str = "ALBUM ART";
@@ -55,35 +57,47 @@ enum Press {
 
 pub struct ArtWindow {
     pub open: bool,
-    pub tiles: u32,
+    /// Height of the art area in skin pixels, if resized; None keeps it square.
+    pub art_h: Option<i32>,
     pub focused: bool,
+    /// Drawn with the skin's gen.bmp; false for the frameless look.
+    pub framed: bool,
     pressed: Option<Press>,
     over_pressed: bool,
 }
 
 impl ArtWindow {
-    pub fn new(open: bool, tiles: u32) -> Self {
+    pub fn new(open: bool, art_h: Option<i32>) -> Self {
         ArtWindow {
             open,
-            tiles: tiles.clamp(MIN_TILES, MAX_TILES),
+            art_h,
             focused: true,
+            framed: true,
             pressed: None,
             over_pressed: false,
         }
     }
 
-    pub fn height(&self) -> i32 {
-        TOP_H + self.tiles as i32 * TILE_H + BOTTOM_H
+    /// Widths of the frame's left, top, right and bottom edges.
+    fn edges(&self) -> (i32, i32, i32, i32) {
+        if self.framed {
+            (LEFT_W, TOP_H, RIGHT_W, BOTTOM_H)
+        } else {
+            (1, 1, 1, 1)
+        }
     }
 
-    /// Where the art goes, relative to the panel's top-left.
+    pub fn height(&self) -> i32 {
+        let (_, top, _, bottom) = self.edges();
+        top + self.inner().h + bottom
+    }
+
+    /// Where the art goes, relative to the panel's top-left: square unless resized.
     pub fn inner(&self) -> Rect {
-        rect(
-            LEFT_W,
-            TOP_H,
-            W - LEFT_W - RIGHT_W,
-            self.tiles as i32 * TILE_H,
-        )
+        let (left, top, right, _) = self.edges();
+        let w = W - left - right;
+        let h = self.art_h.unwrap_or(w).clamp(MIN_ART_H, MAX_ART_H);
+        rect(left, top, w, h)
     }
 
     fn resize_grip(&self) -> Rect {
@@ -96,7 +110,7 @@ impl ArtWindow {
     }
 
     pub fn mouse_down(&mut self, x: i32, y: i32) {
-        self.pressed = if CLOSE.contains(x, y) {
+        self.pressed = if self.framed && CLOSE.contains(x, y) {
             Some(Press::Close)
         } else if self.resize_grip().contains(x, y) {
             Some(Press::Resize {
@@ -111,9 +125,14 @@ impl ArtWindow {
     pub fn mouse_move(&mut self, x: i32, y: i32) {
         match self.pressed {
             Some(Press::Resize { from_bottom }) => {
-                let inner = y + from_bottom - TOP_H - BOTTOM_H;
-                let tiles = (inner as f32 / TILE_H as f32).round().max(0.0) as u32;
-                self.tiles = tiles.clamp(MIN_TILES, MAX_TILES);
+                let (_, top, _, bottom) = self.edges();
+                let h = y + from_bottom - top - bottom;
+                let square = self.inner().w;
+                self.art_h = if (h - square).abs() <= SNAP {
+                    None
+                } else {
+                    Some(h.clamp(MIN_ART_H, MAX_ART_H))
+                };
             }
             Some(Press::Close) => self.over_pressed = CLOSE.contains(x, y),
             None => {}
@@ -131,6 +150,25 @@ impl ArtWindow {
     pub fn draw(&self, fb: &mut Framebuffer, skin: &Skin, has_art: bool) {
         let h = self.height();
         fb.resize(W, h);
+        if self.framed {
+            self.draw_frame(fb, skin);
+        } else {
+            fb.fill(rect(0, 0, W, h), skin.playlist_colors.normal);
+        }
+        let colors = skin.playlist_colors;
+        let inner = self.inner();
+        fb.fill(inner, colors.normal_bg);
+        if !has_art {
+            let note = "no album art";
+            let x = inner.x + (inner.w - font::width(note)) / 2;
+            let y = inner.y + (inner.h - font::H) / 2;
+            font::draw(fb, note, x, y, colors.normal, inner);
+        }
+    }
+
+    /// The gen.bmp frame: title bar, sides and bottom.
+    fn draw_frame(&self, fb: &mut Framebuffer, skin: &Skin) {
+        let h = self.height();
         let s = skin.sheet("gen");
         let sy = if self.focused { 0 } else { 21 };
         let piece = |x| rect(x, sy, 25, TOP_H);
@@ -174,16 +212,6 @@ impl ArtWindow {
         }
         fb.blit(s, BOTTOM_LEFT, 0, h - BOTTOM_H);
         fb.blit(s, BOTTOM_RIGHT, W - BOTTOM_RIGHT.w, h - BOTTOM_H);
-
-        let colors = skin.playlist_colors;
-        let inner = self.inner();
-        fb.fill(inner, colors.normal_bg);
-        if !has_art {
-            let note = "no album art";
-            let x = inner.x + (inner.w - font::width(note)) / 2;
-            let y = inner.y + (inner.h - font::H) / 2;
-            font::draw(fb, note, x, y, colors.normal, inner);
-        }
     }
 }
 
@@ -250,6 +278,24 @@ fn draw_text(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn square_by_default_and_snaps_back_to_square() {
+        for framed in [true, false] {
+            let mut w = ArtWindow::new(true, None);
+            w.framed = framed;
+            let inner = w.inner();
+            assert_eq!(inner.w, inner.h, "framed: {framed}");
+            // Dragging the grip 40 px down makes it taller; back near square snaps to square.
+            let (gx, gy) = (W - 5, w.height() - 5);
+            w.mouse_down(gx, gy);
+            w.mouse_move(gx, gy + 40);
+            assert_eq!(w.inner().h, inner.h + 40);
+            w.mouse_move(gx, gy + 5);
+            w.mouse_up(gx, gy + 5);
+            assert_eq!(w.art_h, None);
+        }
+    }
 
     #[test]
     fn reads_the_title_font() {

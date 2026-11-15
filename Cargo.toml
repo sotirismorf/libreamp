@@ -21,6 +21,11 @@ sdl3 = { version = "0.22.1", default-features = false }
 symphonia = { version = "0.6.1", default-features = false, features = ["mp3", "flac", "ogg", "vorbis", "wav", "pcm", "isomp4", "aac", "alac", "id3v1", "id3v2"] }
 zip = { version = "9.6.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
+# Image and audio decoding are slow unoptimised; build dependencies optimised even in debug
+# builds, so `cargo run` stays responsive.
+[profile.dev.package."*"]
+opt-level = 3
+
 [profile.release]
 lto = true
 strip = true

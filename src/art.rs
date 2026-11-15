@@ -8,20 +8,49 @@ use image::RgbaImage;
 use image::imageops::FilterType;
 
 /// Larger covers are shrunk once on load; the panel never needs more than this.
-const MAX_SIZE: u32 = 1024;
+const MAX_SIZE: u32 = 2048;
+/// Halved copies stop once the longer side would drop below this.
+const MIN_LEVEL_SIZE: u32 = 64;
 /// Image files used when a track has no embedded cover, most preferred first.
 const FOLDER_NAMES: &[&str] = &["cover", "folder", "front", "album", "albumart"];
 const FOLDER_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png"];
 
 pub struct Art {
-    /// Distinguishes one loaded image from the next, so drawing can cache its scaled copy.
+    /// Distinguishes one loaded image from the next, so drawing can cache its textures.
     pub id: u64,
-    pub image: RgbaImage,
+    /// The cover at full size, then halved again and again (like mipmaps), all made on the
+    /// loading thread. Drawing picks the copy just larger than needed and lets the GPU scale
+    /// it the rest of the way (by at most half, which stays smooth), so resizing the panel
+    /// never resamples anything on the UI thread.
+    pub levels: Vec<RgbaImage>,
+}
+
+impl Art {
+    /// The smallest copy at least `w` x `h`, or the full-size one when even that is smaller.
+    pub fn level_for(&self, w: u32, h: u32) -> usize {
+        (self.levels.iter())
+            .rposition(|l| l.width() >= w && l.height() >= h)
+            .unwrap_or(0)
+    }
+}
+
+/// The halving chain for `image`, starting with `image` itself.
+fn levels(image: RgbaImage) -> Vec<RgbaImage> {
+    let mut levels = vec![image];
+    loop {
+        let last = &levels[levels.len() - 1];
+        let (w, h) = (last.width() / 2, last.height() / 2);
+        if w.max(h) < MIN_LEVEL_SIZE || w == 0 || h == 0 {
+            return levels;
+        }
+        let half = image::imageops::resize(last, w, h, FilterType::Triangle);
+        levels.push(half);
+    }
 }
 
 pub struct ArtLoader {
     requests: Sender<(u64, PathBuf)>,
-    results: Receiver<(u64, Option<RgbaImage>)>,
+    results: Receiver<(u64, Option<Vec<RgbaImage>>)>,
     /// The track whose art is shown or loading, and that request's id.
     path: Option<PathBuf>,
     latest: u64,
@@ -40,7 +69,7 @@ impl ArtLoader {
                     job = newer;
                 }
                 let (id, path) = job;
-                if res_tx.send((id, load(&path))).is_err() {
+                if res_tx.send((id, load(&path).map(levels))).is_err() {
                     break;
                 }
             }
@@ -75,9 +104,9 @@ impl ArtLoader {
             return Some(None);
         }
         let mut out = None;
-        for (id, image) in self.results.try_iter() {
+        for (id, levels) in self.results.try_iter() {
             if id == self.latest {
-                out = Some(image.map(|image| Art { id, image }));
+                out = Some(levels.map(|levels| Art { id, levels }));
             }
         }
         out
@@ -132,6 +161,21 @@ mod tests {
         assert_eq!(fit(1000, 1000, 256, 232), (232, 232));
         assert_eq!(fit(1600, 900, 256, 232), (256, 144));
         assert_eq!(fit(100, 400, 256, 232), (58, 232));
+    }
+
+    #[test]
+    fn halves_down_to_a_small_size_and_picks_the_next_larger() {
+        let art = Art {
+            id: 0,
+            levels: levels(RgbaImage::new(1000, 600)),
+        };
+        let sizes: Vec<_> = art.levels.iter().map(|l| l.dimensions()).collect();
+        assert_eq!(sizes, [(1000, 600), (500, 300), (250, 150), (125, 75)]);
+        assert_eq!(art.level_for(400, 240), 1);
+        assert_eq!(art.level_for(500, 300), 1);
+        assert_eq!(art.level_for(501, 300), 0);
+        assert_eq!(art.level_for(2000, 1200), 0);
+        assert_eq!(art.level_for(10, 6), 3);
     }
 
     #[test]

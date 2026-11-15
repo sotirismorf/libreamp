@@ -4,7 +4,7 @@ use crate::gfx::{Framebuffer, Rect, rect};
 use crate::skin::Skin;
 
 pub const H: i32 = 116;
-const W: i32 = 275;
+pub const W: i32 = 275;
 
 /// x of the preamp slider followed by the 10 band sliders.
 const SLIDER_X: [i32; 11] = [21, 78, 96, 114, 132, 150, 168, 186, 204, 222, 240];

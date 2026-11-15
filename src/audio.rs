@@ -303,7 +303,8 @@ impl Audio {
     }
 
     /// Opens `path` and starts playing it from the beginning.
-    pub fn play(&mut self, path: &Path) -> Result<TrackInfo, String> {
+    /// Opens `path` at its start, playing or paused.
+    pub fn load(&mut self, path: &Path, paused: bool) -> Result<TrackInfo, String> {
         let (source, info) = open(path)?;
         let spec = sdl3::sys::audio::SDL_AudioSpec {
             format: AudioFormat::f32_sys().into(),
@@ -327,7 +328,12 @@ impl Audio {
         self.rate = info.rate;
         self.shared.frames.store(0, Ordering::Relaxed);
         self.shared.finished.store(false, Ordering::Relaxed);
-        self.stream.resume().map_err(|e| e.to_string())?;
+        let result = if paused {
+            self.stream.pause()
+        } else {
+            self.stream.resume()
+        };
+        result.map_err(|e| e.to_string())?;
         Ok(info)
     }
 

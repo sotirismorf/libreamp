@@ -1,9 +1,12 @@
 //! Loading classic Winamp skins (.wsz zip archives or unpacked directories).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::Path;
+use std::sync::Arc;
+
+use crate::gfx::Framebuffer;
 
 /// A .wsz/.zip archive, or an unpacked skin directory.
 pub fn is_skin(path: &Path) -> bool {
@@ -48,9 +51,135 @@ impl Sheet {
 
 pub struct Skin {
     sheets: HashMap<String, Sheet>,
+    /// Sheets the skin itself provides, as opposed to ones filled in from the default skin.
+    own: HashSet<String>,
     empty: Sheet,
     pub playlist_colors: PlaylistColors,
     pub vis_colors: [u32; 24],
+    /// Window shapes from the skin's own region.txt.
+    pub regions: Arc<Regions>,
+}
+
+/// Which pixels of a window belong to it, from region.txt; the rest are see-through.
+#[derive(Clone, Debug)]
+pub struct Region {
+    w: i32,
+    h: i32,
+    inside: Vec<bool>,
+}
+
+impl Region {
+    /// Rasterises polygons with corners on pixel boundaries ("outside" coordinates, as
+    /// region.txt uses): a pixel is in if its centre is inside any polygon (even-odd).
+    fn from_polygons(polygons: &[Vec<(f32, f32)>], w: i32, h: i32) -> Region {
+        let mut inside = vec![false; (w * h) as usize];
+        for y in 0..h {
+            for x in 0..w {
+                let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
+                inside[(y * w + x) as usize] = polygons.iter().any(|poly| {
+                    let mut c = false;
+                    for (i, &(x1, y1)) in poly.iter().enumerate() {
+                        let (x2, y2) = poly[(i + 1) % poly.len()];
+                        if (y1 > py) != (y2 > py) && px < x1 + (py - y1) * (x2 - x1) / (y2 - y1) {
+                            c = !c;
+                        }
+                    }
+                    c
+                });
+            }
+        }
+        Region { w, h, inside }
+    }
+
+    /// True if (x, y) is part of the window. Beyond the shape's size counts as inside.
+    pub fn contains(&self, x: i32, y: i32) -> bool {
+        if x < 0 || y < 0 || x >= self.w || y >= self.h {
+            return true;
+        }
+        self.inside[(y * self.w + x) as usize]
+    }
+
+    /// Makes the pixels outside the shape transparent.
+    pub fn apply(&self, fb: &mut Framebuffer) {
+        for y in 0..fb.h.min(self.h) {
+            for x in 0..fb.w.min(self.w) {
+                if !self.inside[(y * self.w + x) as usize] {
+                    fb.px[(y * fb.w + x) as usize] &= 0x00ff_ffff;
+                }
+            }
+        }
+    }
+}
+
+/// The shaped windows region.txt can describe.
+#[derive(Clone, Debug, Default)]
+pub struct Regions {
+    pub main: Option<Region>,
+    pub eq: Option<Region>,
+}
+
+impl Regions {
+    /// Parses region.txt: sections like [Normal] with NumPoints= (points per polygon) and
+    /// PointList= (x,y pairs). As in Winamp, only the first definition of each counts.
+    fn parse(text: &str) -> Regions {
+        /// NumPoints and PointList of one section, as read.
+        #[derive(Default)]
+        struct Section {
+            counts: Option<Vec<f32>>,
+            coords: Option<Vec<f32>>,
+        }
+        let mut sections: HashMap<String, Section> = HashMap::new();
+        let mut current = None;
+        for line in text.lines() {
+            let line = line.split(';').next().unwrap_or("").trim();
+            if let Some(name) = line.strip_prefix('[') {
+                current = Some(name.trim_end_matches(']').trim().to_ascii_lowercase());
+                continue;
+            }
+            let (Some(section), Some((key, value))) = (&current, line.split_once('=')) else {
+                continue;
+            };
+            let numbers: Vec<f32> = value
+                .split(|c: char| c == ',' || c.is_whitespace())
+                .filter_map(|n| n.parse().ok())
+                .collect();
+            let entry = sections.entry(section.clone()).or_default();
+            match key.trim().to_ascii_lowercase().as_str() {
+                "numpoints" if entry.counts.is_none() => entry.counts = Some(numbers),
+                "pointlist" if entry.coords.is_none() => entry.coords = Some(numbers),
+                _ => {}
+            }
+        }
+        let region = |name: &str, w: i32, h: i32| {
+            let section = sections.get(name)?;
+            let (Some(counts), Some(coords)) = (&section.counts, &section.coords) else {
+                return None;
+            };
+            let mut points = coords.as_chunks::<2>().0.iter().map(|&[x, y]| (x, y));
+            let polygons: Vec<Vec<(f32, f32)>> = counts
+                .iter()
+                .map(|n| points.by_ref().take(*n as usize).collect::<Vec<_>>())
+                .filter(|p| p.len() >= 3)
+                .collect();
+            (!polygons.is_empty()).then(|| Region::from_polygons(&polygons, w, h))
+        };
+        Regions {
+            main: region("normal", crate::sprites::MAIN_W, crate::sprites::MAIN_H),
+            eq: region(
+                "equalizer",
+                crate::ui::eq_window::W,
+                crate::ui::eq_window::H,
+            ),
+        }
+    }
+
+    fn from_files(files: &Files) -> Regions {
+        files
+            .iter()
+            .find(|(name, _)| name == "region.txt")
+            .map(|(_, bytes)| Regions::parse(&String::from_utf8_lossy(bytes)))
+            .unwrap_or_default()
+    }
 }
 
 /// Playlist text colours from pledit.txt, as 0xRRGGBB.
@@ -114,11 +243,14 @@ const SHEETS: &[&str] = &[
 impl Skin {
     pub fn base() -> Skin {
         let files = read_zip(std::io::Cursor::new(BASE_SKIN)).expect("bundled base skin is valid");
+        let sheets = decode_sheets(&files);
         Skin {
-            sheets: decode_sheets(&files),
+            own: sheets.keys().cloned().collect(),
+            sheets,
             empty: Sheet::empty(),
             playlist_colors: PlaylistColors::from_files(&files).unwrap_or_default(),
             vis_colors: vis_colors(&files).expect("bundled base skin has viscolor.txt"),
+            regions: Arc::new(Regions::from_files(&files)),
         }
     }
 
@@ -135,6 +267,7 @@ impl Skin {
             return Err(format!("{} has no main.bmp", path.display()));
         }
         let mut skin = Skin::base();
+        skin.own = sheets.keys().cloned().collect();
         skin.sheets.extend(sheets);
         if let Some(colors) = PlaylistColors::from_files(&files) {
             skin.playlist_colors = colors;
@@ -142,7 +275,14 @@ impl Skin {
         if let Some(colors) = vis_colors(&files) {
             skin.vis_colors = colors;
         }
+        // A shape belongs to the skin that drew it; never borrowed from the default skin.
+        skin.regions = Arc::new(Regions::from_files(&files));
         Ok(skin)
+    }
+
+    /// Whether the skin itself has the named sheet (rather than borrowing the default skin's).
+    pub fn has_own(&self, name: &str) -> bool {
+        self.own.contains(name)
     }
 
     /// Returns the named sheet, or an empty one when the skin lacks it.
@@ -231,5 +371,37 @@ mod tests {
             );
         }
         assert_eq!((skin.sheet("main").w, skin.sheet("main").h), (275, 116));
+    }
+
+    #[test]
+    fn parses_region_txt() {
+        let text = "; a comment\r\n[Normal]\r\nNumPoints=4, 4 ; two squares\r\n\
+            PointList=0,0, 10,0, 10,10, 0,10,  20,0 30,0 30,10 20,10\r\n\
+            [Normal]\r\nNumPoints=4\r\nPointList=0,0, 275,0, 275,116, 0,116\r\n";
+        let regions = Regions::parse(text);
+        let main = regions.main.expect("main region");
+        assert!(main.contains(0, 0) && main.contains(9, 9) && main.contains(25, 5));
+        assert!(!main.contains(10, 0) && !main.contains(15, 5) && !main.contains(30, 5));
+        assert!(!main.contains(5, 10));
+        assert!(regions.eq.is_none());
+        // The default skin's region.txt is all comments.
+        assert!(Skin::base().regions.main.is_none());
+    }
+
+    #[test]
+    fn knows_which_sheets_a_skin_brings() {
+        let dir = std::env::temp_dir().join(format!("libreamp-skin-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        image::RgbImage::new(275, 116)
+            .save(dir.join("MAIN.BMP"))
+            .unwrap();
+        let skin = Skin::load(&dir);
+        std::fs::remove_dir_all(&dir).unwrap();
+        let skin = skin.unwrap();
+        assert!(skin.has_own("main"));
+        // Missing sheets are filled in from the default skin, but aren't the skin's own.
+        assert!(!skin.has_own("gen"));
+        assert!(skin.sheet("gen").w > 0);
+        assert!(Skin::base().has_own("gen"));
     }
 }
