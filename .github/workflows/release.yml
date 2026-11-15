@@ -34,7 +34,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: packaging/appimage/build.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: appimage
           path: dist/*
@@ -52,7 +52,7 @@ jobs:
           # Ubuntu's AppArmor default blocks the unprivileged user namespaces bubblewrap needs.
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: packaging/flatpak/build.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: flatpak
           path: dist/*
